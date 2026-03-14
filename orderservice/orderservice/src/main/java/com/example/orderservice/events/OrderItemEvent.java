@@ -1,15 +1,13 @@
-package com.example.orderservice.dto;
+package com.example.orderservice.events;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+@Data
 @AllArgsConstructor
 @NoArgsConstructor
-@Data
-public class OrderRequestItemDto {
-    private Long id;
+public class OrderItemEvent {
     private Long productId;
     private Long quantity;
-//    private Double price;
 }

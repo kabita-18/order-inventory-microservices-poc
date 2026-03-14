@@ -2,9 +2,13 @@ package com.example.orderservice.service;
 
 import com.example.orderservice.clients.InventoryOpenFeignClient;
 import com.example.orderservice.dto.OrderRequestDto;
+import com.example.orderservice.dto.OrderRequestItemDto;
 import com.example.orderservice.entity.OrderItem;
 import com.example.orderservice.entity.OrderStatus;
 import com.example.orderservice.entity.Orders;
+import com.example.orderservice.events.OrderCreatedEvent;
+import com.example.orderservice.events.OrderItemEvent;
+import com.example.orderservice.kafka.OrderEventPublisher;
 import com.example.orderservice.repository.OrderRepository;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
@@ -26,6 +30,7 @@ public class OrderServiceImpl implements OrderService {
     private final OrderRepository orderRepository;
     private final ModelMapper modelMapper;
     private final InventoryOpenFeignClient inventoryOpenFeignClient;
+    private final OrderEventPublisher orderEventPublisher;
 
     @Override
     public List<OrderRequestDto> getAllOrders() {
@@ -38,23 +43,47 @@ public class OrderServiceImpl implements OrderService {
     @CircuitBreaker(name ="inventoryCircuitBreaker", fallbackMethod = "createOrderFallback")
 //    @RateLimiter(name = "inventoryRateLimiter", fallbackMethod = "createOrderFallback")
     @Override
+    @Transactional
     public OrderRequestDto createOrder(OrderRequestDto orderRequestDto) {
         log.info("Creating Order Request from Order Service");
-        Double totalPrice = inventoryOpenFeignClient.reduceStocks(orderRequestDto);
+//        Double totalPrice = inventoryOpenFeignClient.reduceStocks(orderRequestDto);
         Orders orders = modelMapper.map(orderRequestDto, Orders.class);
         for(OrderItem orderItem: orders.getOrderItems()) {
             orderItem.setOrder(orders);
         }
 //        orders.setTotalPrice(orders.getTotalPrice());
-        orders.setTotalPrice(totalPrice);
-        orders.setOrderStatus(OrderStatus.CONFIRMED);
+        orders.setTotalPrice(null);
+        orders.setOrderStatus(OrderStatus.PENDING);
 
         Orders saveOrder = orderRepository.save(orders);
+
+        List<OrderItemEvent> itemEvents = saveOrder.getOrderItems()
+                .stream()
+                .map(item -> new OrderItemEvent(
+                        item.getProductId(),
+                        Long.valueOf(item.getQuantity())
+                ))
+                .toList();
+
+        OrderCreatedEvent event = new OrderCreatedEvent(
+                saveOrder.getId(),
+                itemEvents
+        );
+
+        orderEventPublisher.publishOrderCreatedEvent(event);
         return modelMapper.map(saveOrder, OrderRequestDto.class);
 
     }
 
 
+    public void handleOrderConfirmed(Long  orderId, Double totalPrice) {
+        Orders order = orderRepository.findById(orderId).orElseThrow();
+        order.setOrderStatus(OrderStatus.CONFIRMED);
+        order.setTotalPrice(totalPrice);
+        orderRepository.save(order);
+
+        log.info("Order {} Confirmed with totalPrice {}", orderId, totalPrice);
+    }
     public OrderRequestDto createOrderFallback(OrderRequestDto orderRequestDto, Throwable throwable) {
         log.error("Creating Order Fallback from Order Service: {}", throwable.getMessage());
 

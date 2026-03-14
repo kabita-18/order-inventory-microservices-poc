@@ -51,7 +51,7 @@ public class ProductServiceImpl implements ProductService {
             if(product.getStock() < quantity) {
                 throw new RuntimeException("Quantity exceeded and can not fulfilled for given quantity");
             }
-            product.setStock((int) (product.getStock()- quantity));
+            product.setStock((product.getStock()- quantity));
             productRepository.save(product);
 
             totalPrice += quantity*product.getStock();
@@ -74,7 +74,7 @@ public class ProductServiceImpl implements ProductService {
                 throw new RuntimeException("Quantity must be greater than 0");
             }
             updatedQuantity = product.getStock()+restockQty;
-            product.setStock((int) updatedQuantity);
+            product.setStock(updatedQuantity);
             productRepository.save(product);
         }
 
